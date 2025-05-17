@@ -12,5 +12,6 @@ export const fetchBlogs = () => API.get('/blogs');
 export const fetchBlogById = (id) => API.get(`/blogs/${id}`);
 export const saveDraft = (blogData) => API.post('/blogs/save-draft', blogData);
 export const publishBlog = (blogData) => API.post('/blogs/publish', blogData);
+export const deleteBlog = (id) => API.delete(`/blogs/${id}`);
 
 export default API; 

@@ -89,4 +89,24 @@ exports.publishBlog = async (req, res) => {
     console.error('Error publishing blog:', error);
     res.status(500).json({ message: 'Failed to publish blog' });
   }
+};
+
+// Delete a blog
+exports.deleteBlog = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const blog = await Blog.findById(id);
+    
+    if (!blog) {
+      return res.status(404).json({ message: 'Blog not found' });
+    }
+    
+    await Blog.findByIdAndDelete(id);
+    
+    res.status(200).json({ message: 'Blog deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting blog:', error);
+    res.status(500).json({ message: 'Failed to delete blog' });
+  }
 }; 

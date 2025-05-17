@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { fetchBlogById } from '../utils/api'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { fetchBlogById, deleteBlog } from '../utils/api'
+import toast from 'react-hot-toast'
 
 const BlogDetail = () => {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [blog, setBlog] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     const getBlog = async () => {
@@ -27,6 +30,19 @@ const BlogDetail = () => {
       getBlog()
     }
   }, [id])
+
+  const handleDelete = async () => {
+    try {
+      await deleteBlog(id)
+      toast.success('Blog deleted successfully')
+      navigate('/')
+    } catch (err) {
+      console.error('Error deleting blog:', err)
+      toast.error('Failed to delete blog')
+    } finally {
+      setShowDeleteConfirm(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -104,10 +120,46 @@ const BlogDetail = () => {
         <Link to="/" className="text-blue-600 hover:underline">
           Back to blogs
         </Link>
-        <Link to={`/editor/${blog._id}`} className="text-blue-600 hover:underline">
-          Edit this blog
-        </Link>
+        <div className="space-x-4">
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="text-red-600 hover:text-red-800 font-medium"
+          >
+            Delete
+          </button>
+          <Link to={`/editor/${blog._id}`} className="text-blue-600 hover:underline">
+            Edit
+          </Link>
+        </div>
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete this blog? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   )
 }

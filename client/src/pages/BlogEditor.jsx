@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchBlogById, saveDraft, publishBlog } from '../utils/api'
+import { fetchBlogById, saveDraft, publishBlog, deleteBlog } from '../utils/api'
 import { debounce } from '../utils/debounce'
 import toast from 'react-hot-toast'
 
@@ -20,11 +20,16 @@ const BlogEditor = () => {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [debouncing, setDebouncing] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   
   // Refs for tracking changes
-  const isEditing = useRef(false)
-  const intervalRef = useRef(null)
-  
+  const isModified = useRef(false)
+  const hasInitialContent = useRef(false)
+  const originalBlogData = useRef(null)
+  const saveTimeoutRef = useRef(null)
+  const debounceTimerRef = useRef(null)
+
   // Fetch blog if editing existing
   useEffect(() => {
     if (id) {
@@ -32,10 +37,13 @@ const BlogEditor = () => {
       fetchBlogById(id)
         .then(res => {
           const blogData = res.data
-          setBlog({
+          const formattedBlog = {
             ...blogData,
             tags: blogData.tags.join(', ') // Convert array to comma-separated string
-          })
+          }
+          setBlog(formattedBlog)
+          originalBlogData.current = JSON.stringify(formattedBlog)
+          hasInitialContent.current = true
         })
         .catch(err => {
           console.error('Error fetching blog:', err)
@@ -45,51 +53,20 @@ const BlogEditor = () => {
     }
   }, [id])
   
-  // Set up auto-save interval (every 30 seconds)
-  useEffect(() => {
-    // Only set up interval if we have a blog loaded
-    if (blog.title || blog.content) {
-      intervalRef.current = setInterval(() => {
-        if (isEditing.current) {
-          handleSaveDraft()
-        }
-      }, 30000) // 30 seconds interval
-    }
+  // Create save draft function with useCallback to avoid recreations
+  const handleSaveDraft = useCallback(async (showToast = true) => {
+    if ((!blog.title && !blog.content) || saving) return
     
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
+    // Skip save if content hasn't changed
+    if (originalBlogData.current && 
+        JSON.stringify({...blog, _id: undefined}) === originalBlogData.current) {
+      return
     }
-  }, [blog])
-  
-  // Debounced save function (after 5 seconds of inactivity)
-  const debouncedSave = debounce(() => {
-    if (isEditing.current && (blog.title || blog.content)) {
-      handleSaveDraft()
-    }
-  }, 5000) // 5 seconds debounce
-  
-  // Handle input changes
-  const handleChange = (e) => {
-    const { name, value } = e.target
-    
-    setBlog(prev => ({
-      ...prev,
-      [name]: value
-    }))
-    
-    isEditing.current = true
-    debouncedSave()
-  }
-  
-  // Save draft
-  const handleSaveDraft = async () => {
-    if (!blog.title && !blog.content) return
     
     try {
       setSaving(true)
-      isEditing.current = false
+      setDebouncing(false)
+      isModified.current = false
       
       // Format blog data
       const blogData = {
@@ -106,19 +83,113 @@ const BlogEditor = () => {
       const response = await saveDraft(blogData)
       
       // If this is a new blog, update URL with new ID
-      if (!id && response.data._id) {
+      if (!id && response.data && response.data._id) {
         navigate(`/editor/${response.data._id}`, { replace: true })
       }
       
       setLastSaved(new Date())
-      toast.success('Draft saved')
+      originalBlogData.current = JSON.stringify({...blog, _id: undefined})
+      
+      if (showToast) {
+        toast.success('Draft saved')
+      }
     } catch (err) {
       console.error('Error saving draft:', err)
-      toast.error('Failed to save draft')
-      isEditing.current = true
+      if (showToast) {
+        toast.error('Failed to save draft')
+      }
+      isModified.current = true
     } finally {
       setSaving(false)
     }
+  }, [blog, id, navigate, saving])
+  
+  // Enhanced debounced save with visual feedback
+  const debouncedSave = useCallback(() => {
+    // Clear any existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+    
+    // Set debouncing state for UI feedback
+    setDebouncing(true)
+    
+    // Create new debounce timer
+    debounceTimerRef.current = setTimeout(() => {
+      if (isModified.current) {
+        handleSaveDraft(false) // Don't show toast for auto-saves
+      } else {
+        setDebouncing(false)
+      }
+    }, 1000) // Reduced to 1 second for more responsive feedback
+    
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [handleSaveDraft])
+  
+  // Set up auto-save interval (every 15 seconds)
+  useEffect(() => {
+    // Clear any existing interval
+    if (saveTimeoutRef.current) {
+      clearInterval(saveTimeoutRef.current)
+    }
+    
+    // Only set up interval if we have a blog with content
+    if (hasInitialContent.current || blog.title || blog.content) {
+      saveTimeoutRef.current = setInterval(() => {
+        if (isModified.current && !saving) {
+          handleSaveDraft(false) // Don't show toast for interval saves
+        }
+      }, 15000) // 15s interval
+    }
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearInterval(saveTimeoutRef.current)
+      }
+    }
+  }, [handleSaveDraft, saving])
+  
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [])
+  
+  // Set up beforeunload handler to save before navigating away
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (isModified.current) {
+        const message = 'You have unsaved changes. Are you sure you want to leave?'
+        e.returnValue = message
+        return message
+      }
+    }
+    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
+  
+  // Handle input changes
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    
+    setBlog(prev => ({
+      ...prev,
+      [name]: value
+    }))
+    
+    isModified.current = true
+    debouncedSave()
   }
   
   // Publish blog
@@ -160,6 +231,24 @@ const BlogEditor = () => {
     }
   }
   
+  // Delete blog
+  const handleDelete = async () => {
+    if (!id) return
+    
+    try {
+      setSaving(true)
+      await deleteBlog(id)
+      toast.success('Blog deleted successfully')
+      navigate('/')
+    } catch (err) {
+      console.error('Error deleting blog:', err)
+      toast.error('Failed to delete blog')
+    } finally {
+      setSaving(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+  
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
@@ -175,11 +264,23 @@ const BlogEditor = () => {
           {id ? 'Edit Blog' : 'Create New Blog'}
         </h1>
         
-        {lastSaved && (
-          <span className="text-sm text-gray-500">
-            Last saved: {lastSaved.toLocaleTimeString()}
-          </span>
-        )}
+        <div className="flex items-center">
+          {saving ? (
+            <span className="text-sm text-blue-500 flex items-center">
+              <div className="w-3 h-3 mr-2 rounded-full border-2 border-t-blue-500 border-r-blue-500 border-b-transparent border-l-transparent animate-spin"></div>
+              Saving...
+            </span>
+          ) : debouncing ? (
+            <span className="text-sm text-gray-500 flex items-center">
+              <div className="w-2 h-2 mr-2 rounded-full bg-gray-400 animate-pulse"></div>
+              Auto-saving...
+            </span>
+          ) : lastSaved ? (
+            <span className="text-sm text-gray-500">
+              Last saved: {lastSaved.toLocaleTimeString()}
+            </span>
+          ) : null}
+        </div>
       </div>
       
       <div className="space-y-4">
@@ -219,26 +320,66 @@ const BlogEditor = () => {
         </div>
         
         {/* Actions */}
-        <div className="flex justify-end space-x-4 mt-6">
-          <button
-            type="button"
-            onClick={handleSaveDraft}
-            disabled={saving}
-            className="btn btn-secondary"
-          >
-            {saving ? 'Saving...' : 'Save Draft'}
-          </button>
+        <div className="flex justify-between mt-6">
+          {id && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Delete Blog
+            </button>
+          )}
           
-          <button
-            type="button"
-            onClick={handlePublish}
-            disabled={saving || !blog.title || !blog.content}
-            className="btn btn-primary"
-          >
-            {saving ? 'Publishing...' : 'Publish'}
-          </button>
+          <div className="flex space-x-4">
+            <button
+              type="button"
+              onClick={() => handleSaveDraft(true)}
+              disabled={saving}
+              className="btn btn-secondary"
+            >
+              {saving ? 'Saving...' : 'Save Draft'}
+            </button>
+            
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={saving || !blog.title || !blog.content}
+              className="btn btn-primary"
+            >
+              {saving ? 'Publishing...' : 'Publish'}
+            </button>
+          </div>
         </div>
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete this blog? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -14,4 +14,7 @@ router.post('/blogs/save-draft', blogController.saveDraft);
 // Publish blog
 router.post('/blogs/publish', blogController.publishBlog);
 
+// Delete blog
+router.delete('/blogs/:id', blogController.deleteBlog);
+
 module.exports = router; 
