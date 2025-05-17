@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// Use environment variable for API base URL, fall back to /api for development with proxy
+const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
+
 const API = axios.create({
-  baseURL: '/api',
+  baseURL,
 });
 
 // Blog endpoints
