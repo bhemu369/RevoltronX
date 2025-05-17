@@ -19,7 +19,9 @@ const BlogCard = ({ blog }) => {
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
       <div className="p-5">
         <div className="flex justify-between items-start mb-2">
-          <h3 className="text-xl font-semibold text-gray-800">{title || 'Untitled'}</h3>
+          <Link to={`/blog/${_id}`} className="text-xl font-semibold text-gray-800 hover:text-blue-600">
+            {title || 'Untitled'}
+          </Link>
           <span className={`px-2 py-1 text-xs rounded-full ${
             status === 'published' 
               ? 'bg-green-100 text-green-800' 
@@ -43,12 +45,20 @@ const BlogCard = ({ blog }) => {
         
         <div className="flex justify-between items-center mt-4">
           <span className="text-gray-500 text-sm">{formattedDate}</span>
-          <Link 
-            to={`/editor/${_id}`} 
-            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-          >
-            Edit
-          </Link>
+          <div className="space-x-3">
+            <Link 
+              to={`/blog/${_id}`} 
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              Read
+            </Link>
+            <Link 
+              to={`/editor/${_id}`} 
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              Edit
+            </Link>
+          </div>
         </div>
       </div>
     </div>
